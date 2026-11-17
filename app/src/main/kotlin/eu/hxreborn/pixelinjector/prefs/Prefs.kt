@@ -81,9 +81,80 @@ object Prefs {
             "systemui.headsUpDuration.seconds",
             HEADS_UP_SECONDS_DEFAULT,
         ).register()
+    const val FINGERPRINT_ICON_SIZE_MIN = 25
+    const val FINGERPRINT_ICON_SIZE_MAX = 200
+    const val FINGERPRINT_ICON_SIZE_DEFAULT = 100
+    const val FINGERPRINT_ICON_OPACITY_MIN = 10
+    const val FINGERPRINT_ICON_OPACITY_MAX = 100
+    const val FINGERPRINT_ICON_OPACITY_DEFAULT = 100
+    const val FINGERPRINT_SCALE_FIT = "fit"
+    const val FINGERPRINT_SCALE_CROP = "crop"
+    const val FINGERPRINT_SCALE_STRETCH = "stretch"
+    const val FINGERPRINT_TINT_NONE = "none"
+    const val FINGERPRINT_TINT_SYSTEM = "system"
+    const val FINGERPRINT_TINT_ACCENT = "accent"
+    const val FINGERPRINT_TINT_WHITE = "white"
     val FINGERPRINT_ICON = BoolPref("systemui.fingerprintIcon", false).register()
     val FINGERPRINT_ICON_STYLE = StringPref("systemui.fingerprintIcon.style", "").register()
     val FINGERPRINT_HIDE_CIRCLE = BoolPref("systemui.fingerprintIcon.hideCircle", false).register()
+    val FINGERPRINT_ICON_SIZE =
+        IntPref(
+            "systemui.fingerprintIcon.size",
+            FINGERPRINT_ICON_SIZE_DEFAULT,
+        ).register()
+    val FINGERPRINT_ICON_OPACITY =
+        IntPref(
+            "systemui.fingerprintIcon.opacity",
+            FINGERPRINT_ICON_OPACITY_DEFAULT,
+        ).register()
+    val FINGERPRINT_ICON_ROTATION = IntPref("systemui.fingerprintIcon.rotation", 0).register()
+    val FINGERPRINT_ICON_TINT =
+        StringPref(
+            "systemui.fingerprintIcon.tint",
+            FINGERPRINT_TINT_NONE,
+        ).register()
+    val FINGERPRINT_CUSTOM_SCALE =
+        StringPref(
+            "systemui.fingerprintIcon.customScale",
+            FINGERPRINT_SCALE_FIT,
+        ).register()
+    val FINGERPRINT_CUSTOM_CLIP_CIRCLE =
+        BoolPref(
+            "systemui.fingerprintIcon.clipCircle",
+            false,
+        ).register()
+    val FINGERPRINT_CUSTOM_INVERT =
+        BoolPref(
+            "systemui.fingerprintIcon.invert",
+            false,
+        ).register()
+    const val SNOWFALL_INTENSITY_MIN = 10
+    const val SNOWFALL_INTENSITY_MAX = 100
+    const val SNOWFALL_INTENSITY_DEFAULT = 40
+    const val SNOWFALL_SPEED_MIN = 25
+    const val SNOWFALL_SPEED_MAX = 200
+    const val SNOWFALL_SPEED_DEFAULT = 100
+    const val SNOWFALL_WIND_MIN = 0
+    const val SNOWFALL_WIND_MAX = 100
+    const val SNOWFALL_WIND_DEFAULT = 45
+    val SNOWFALL = BoolPref("systemui.snowfall", false).register()
+    val SNOWFALL_INTENSITY =
+        IntPref(
+            "systemui.snowfall.intensity",
+            SNOWFALL_INTENSITY_DEFAULT,
+        ).register()
+    val SNOWFALL_SPEED =
+        IntPref(
+            "systemui.snowfall.speed",
+            SNOWFALL_SPEED_DEFAULT,
+        ).register()
+    val SNOWFALL_WIND =
+        IntPref(
+            "systemui.snowfall.wind",
+            SNOWFALL_WIND_DEFAULT,
+        ).register()
+    val SNOWFALL_APP_OVERLAY = BoolPref("systemui.snowfall.appOverlay", true).register()
+    val SNOWFALL_SHADE_ONLY = BoolPref("systemui.snowfall.shadeOnly", false).register()
     val HIDE_SHORTCUT_CIRCLES = BoolPref("systemui.hideShortcutCircles", false).register()
     val STATUS_BAR_DOUBLE_TAP = BoolPref("systemui.statusBarDoubleTap", false).register()
     val NEW_TASK = BoolPref("system.newTask", false).register()

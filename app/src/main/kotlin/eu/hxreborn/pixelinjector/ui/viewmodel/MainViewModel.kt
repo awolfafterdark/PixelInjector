@@ -68,7 +68,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -79,11 +78,10 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
-import java.io.File
 import java.io.FileOutputStream
 
 private const val SYSTEM_PROCESS = "system"
-private const val FINGERPRINT_IMAGE_PX = 512
+private const val FINGERPRINT_IMAGE_PX = 1024
 private val fixedPackages =
     mapOf(
         TweakGroup.SYSTEM_UI to HookedPackages(listOf(ModuleConstants.SYSTEMUI_PACKAGE), true),
@@ -556,6 +554,24 @@ class MainViewModel(
         restartOnChange[pref]?.let(::restartApps)
     }
 
+    fun resetFingerprintIconOptions() {
+        save(Prefs.FINGERPRINT_ICON_SIZE, Prefs.FINGERPRINT_ICON_SIZE_DEFAULT)
+        save(Prefs.FINGERPRINT_ICON_OPACITY, Prefs.FINGERPRINT_ICON_OPACITY_DEFAULT)
+        save(Prefs.FINGERPRINT_ICON_ROTATION, 0)
+        save(Prefs.FINGERPRINT_ICON_TINT, Prefs.FINGERPRINT_TINT_NONE)
+        save(Prefs.FINGERPRINT_CUSTOM_SCALE, Prefs.FINGERPRINT_SCALE_FIT)
+        save(Prefs.FINGERPRINT_CUSTOM_CLIP_CIRCLE, false)
+        save(Prefs.FINGERPRINT_CUSTOM_INVERT, false)
+    }
+
+    fun resetSnowfallOptions() {
+        save(Prefs.SNOWFALL_INTENSITY, Prefs.SNOWFALL_INTENSITY_DEFAULT)
+        save(Prefs.SNOWFALL_SPEED, Prefs.SNOWFALL_SPEED_DEFAULT)
+        save(Prefs.SNOWFALL_WIND, Prefs.SNOWFALL_WIND_DEFAULT)
+        save(Prefs.SNOWFALL_APP_OVERLAY, true)
+        save(Prefs.SNOWFALL_SHADE_ONLY, false)
+    }
+
     fun saveFingerprintImage(uri: Uri) {
         viewModelScope.launch {
             fingerprintImageLock.withLock { writeFingerprintImage(uri) }
@@ -567,10 +583,10 @@ class MainViewModel(
         val saved =
             withContext(Dispatchers.IO) {
                 runCatching {
-                    val service = checkNotNull(app.service.value) { "service unbound" }
                     val source = ImageDecoder.createSource(context.contentResolver, uri)
                     val bitmap =
                         ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
                             val scale = FINGERPRINT_IMAGE_PX.toFloat() / maxOf(info.size.width, info.size.height)
                             if (scale < 1f) {
                                 decoder.setTargetSize((info.size.width * scale).toInt(), (info.size.height * scale).toInt())
@@ -579,13 +595,13 @@ class MainViewModel(
                     val png = ByteArrayOutputStream()
                     check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, png)) { "png compress failed" }
                     val bytes = png.toByteArray()
-                    service.openRemoteFile(FingerprintStyles.IMAGE_FILE).use { fd ->
+                    fingerprintImageFile(context).writeBytes(bytes)
+                    app.service.value?.openRemoteFile(FingerprintStyles.IMAGE_FILE)?.use { fd ->
                         FileOutputStream(fd.fileDescriptor).use {
                             it.channel.truncate(0)
                             it.write(bytes)
                         }
                     }
-                    fingerprintImageFile(context).writeBytes(bytes)
                 }.onFailure { Log.e(ModuleConstants.LOG_TAG, "fingerprint image failed", it) }.isSuccess
             }
         if (saved) {

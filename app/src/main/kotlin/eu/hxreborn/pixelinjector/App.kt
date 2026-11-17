@@ -5,16 +5,19 @@ import android.content.Context
 import android.util.Log
 import androidx.core.content.edit
 import com.topjohnwu.superuser.Shell
+import eu.hxreborn.pixelinjector.icons.FingerprintStyles
 import eu.hxreborn.pixelinjector.prefs.Prefs
 import eu.hxreborn.pixelinjector.prefs.PrefsRepository
 import eu.hxreborn.pixelinjector.support.GeckoWatch
 import eu.hxreborn.pixelinjector.support.Support
+import eu.hxreborn.pixelinjector.ui.editor.fingerprintImageFile
 import eu.hxreborn.pixelinjector.ui.util.DateStyle
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.FileOutputStream
 
 class App :
     Application(),
@@ -69,13 +72,34 @@ class App :
     override fun onServiceBind(service: XposedService) {
         Log.i(
             ModuleConstants.LOG_TAG,
-            "service bound framework=${service.frameworkName} version=${service.frameworkVersion} api=${service.apiVersion}",
+            "service bound framework=${service.frameworkName} " +
+                "version=${service.frameworkVersion} api=${service.apiVersion}",
         )
         _service.value = service
+        syncFingerprintImage(service)
         prefs.syncToRemote()
         if (!_everBound.value) {
             state.edit { putBoolean(EVER_BOUND, true) }
             _everBound.value = true
+        }
+    }
+
+    private fun syncFingerprintImage(service: XposedService) {
+        val localFile = fingerprintImageFile(this).takeIf { it.exists() } ?: return
+        runCatching {
+            val bytes = localFile.readBytes()
+            service.openRemoteFile(FingerprintStyles.IMAGE_FILE).use { fd ->
+                FileOutputStream(fd.fileDescriptor).use {
+                    it.channel.truncate(0)
+                    it.write(bytes)
+                }
+            }
+        }.onFailure {
+            Log.w(
+                ModuleConstants.LOG_TAG,
+                "remote fingerprint image sync failed reason=${it.message}",
+                it,
+            )
         }
     }
 

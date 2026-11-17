@@ -29,6 +29,9 @@ sealed interface Destination : NavKey {
     data object FingerprintIconEditor : Destination
 
     @Serializable
+    data object SnowfallEditor : Destination
+
+    @Serializable
     data object NowPlayingChipEditor : Destination
 
     @Serializable

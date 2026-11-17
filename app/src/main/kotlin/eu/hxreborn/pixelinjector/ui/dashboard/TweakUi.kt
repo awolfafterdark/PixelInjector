@@ -2,6 +2,7 @@ package eu.hxreborn.pixelinjector.ui.dashboard
 
 import android.os.Build
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AcUnit
 import androidx.compose.material.icons.outlined.AddToHomeScreen
 import androidx.compose.material.icons.outlined.Android
 import androidx.compose.material.icons.outlined.AppShortcut
@@ -44,6 +45,7 @@ import eu.hxreborn.pixelinjector.ModuleConstants.GBOARD_PACKAGES
 import eu.hxreborn.pixelinjector.ModuleConstants.KDE_CONNECT_PACKAGE
 import eu.hxreborn.pixelinjector.ModuleConstants.LAUNCHER_PACKAGES
 import eu.hxreborn.pixelinjector.R
+import eu.hxreborn.pixelinjector.icons.FingerprintStyles
 import eu.hxreborn.pixelinjector.prefs.AppPrefs
 import eu.hxreborn.pixelinjector.prefs.BoolPref
 import eu.hxreborn.pixelinjector.prefs.IntPref
@@ -193,7 +195,25 @@ val tweakUis: List<TweakUi> =
             TweakGroup.SYSTEM_UI,
             editor =
                 TweakEditor(R.string.tweak_fingerprint_icon_edit, null, Destination.FingerprintIconEditor) {
-                    it[Prefs.FINGERPRINT_ICON_STYLE].substringBefore(':').ifEmpty { "stock" }.replaceFirstChar(Char::uppercase)
+                    val rawStyle = it[Prefs.FINGERPRINT_ICON_STYLE]
+                    val label = rawStyle.substringBefore(':').ifEmpty { "stock" }.replaceFirstChar(Char::uppercase)
+                    val size = it[Prefs.FINGERPRINT_ICON_SIZE]
+                    if (rawStyle == FingerprintStyles.NONE || size == Prefs.FINGERPRINT_ICON_SIZE_DEFAULT) {
+                        label
+                    } else {
+                        "$label ($size%)"
+                    }
+                },
+        ),
+        TweakUi(
+            "Snowfall",
+            Prefs.SNOWFALL,
+            R.string.tweak_snowfall,
+            R.string.tweak_snowfall_desc,
+            TweakGroup.SYSTEM_UI,
+            editor =
+                TweakEditor(R.string.tweak_snowfall_edit, null, Destination.SnowfallEditor) {
+                    "${it[Prefs.SNOWFALL_INTENSITY]}%"
                 },
         ),
         TweakUi(
@@ -373,6 +393,7 @@ private val tweakSymbols: Map<String, ImageVector> =
         "OngoingNoDismiss" to Icons.Outlined.PushPin,
         "HeadsUpDuration" to Icons.Outlined.Timer,
         "FingerprintIcon" to Icons.Outlined.Fingerprint,
+        "Snowfall" to Icons.Outlined.AcUnit,
         "HideShortcutCircles" to Icons.Outlined.HideSource,
         "ChargingDetails" to Icons.Outlined.BatteryChargingFull,
         "NowPlayingChip" to Icons.Outlined.MusicNote,

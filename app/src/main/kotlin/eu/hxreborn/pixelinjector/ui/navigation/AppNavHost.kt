@@ -56,6 +56,7 @@ import eu.hxreborn.pixelinjector.ui.editor.EmptyShadeSheet
 import eu.hxreborn.pixelinjector.ui.editor.FingerprintIconSheet
 import eu.hxreborn.pixelinjector.ui.editor.NowPlayingChipSheet
 import eu.hxreborn.pixelinjector.ui.editor.RulesEditorScreen
+import eu.hxreborn.pixelinjector.ui.editor.SnowfallSheet
 import eu.hxreborn.pixelinjector.ui.editor.SoundSheet
 import eu.hxreborn.pixelinjector.ui.log.ModuleLogScreen
 import eu.hxreborn.pixelinjector.ui.reload.ProgressSheet
@@ -247,9 +248,39 @@ fun AppNavHost(
                     FingerprintIconSheet(
                         style = prefs[Prefs.FINGERPRINT_ICON_STYLE],
                         hideCircle = prefs[Prefs.FINGERPRINT_HIDE_CIRCLE],
+                        size = prefs[Prefs.FINGERPRINT_ICON_SIZE],
+                        opacity = prefs[Prefs.FINGERPRINT_ICON_OPACITY],
+                        rotation = prefs[Prefs.FINGERPRINT_ICON_ROTATION],
+                        tint = prefs[Prefs.FINGERPRINT_ICON_TINT],
+                        customScale = prefs[Prefs.FINGERPRINT_CUSTOM_SCALE],
+                        clipCircle = prefs[Prefs.FINGERPRINT_CUSTOM_CLIP_CIRCLE],
+                        invert = prefs[Prefs.FINGERPRINT_CUSTOM_INVERT],
                         onStyleChange = { viewModel.save(Prefs.FINGERPRINT_ICON_STYLE, it) },
                         onHideCircleChange = { viewModel.save(Prefs.FINGERPRINT_HIDE_CIRCLE, it) },
+                        onSizeChange = { viewModel.save(Prefs.FINGERPRINT_ICON_SIZE, it) },
+                        onOpacityChange = { viewModel.save(Prefs.FINGERPRINT_ICON_OPACITY, it) },
+                        onRotationChange = { viewModel.save(Prefs.FINGERPRINT_ICON_ROTATION, it) },
+                        onTintChange = { viewModel.save(Prefs.FINGERPRINT_ICON_TINT, it) },
+                        onCustomScaleChange = { viewModel.save(Prefs.FINGERPRINT_CUSTOM_SCALE, it) },
+                        onClipCircleChange = { viewModel.save(Prefs.FINGERPRINT_CUSTOM_CLIP_CIRCLE, it) },
+                        onInvertChange = { viewModel.save(Prefs.FINGERPRINT_CUSTOM_INVERT, it) },
+                        onResetOptions = viewModel::resetFingerprintIconOptions,
                         onImagePicked = viewModel::saveFingerprintImage,
+                    )
+                }
+                entry<Destination.SnowfallEditor>(metadata = BottomSheetSceneStrategy.bottomSheet()) {
+                    SnowfallSheet(
+                        intensity = prefs[Prefs.SNOWFALL_INTENSITY],
+                        speed = prefs[Prefs.SNOWFALL_SPEED],
+                        wind = prefs[Prefs.SNOWFALL_WIND],
+                        appOverlay = prefs[Prefs.SNOWFALL_APP_OVERLAY],
+                        shadeOnly = prefs[Prefs.SNOWFALL_SHADE_ONLY],
+                        onIntensityChange = { viewModel.save(Prefs.SNOWFALL_INTENSITY, it) },
+                        onSpeedChange = { viewModel.save(Prefs.SNOWFALL_SPEED, it) },
+                        onWindChange = { viewModel.save(Prefs.SNOWFALL_WIND, it) },
+                        onAppOverlayChange = { viewModel.save(Prefs.SNOWFALL_APP_OVERLAY, it) },
+                        onShadeOnlyChange = { viewModel.save(Prefs.SNOWFALL_SHADE_ONLY, it) },
+                        onResetOptions = viewModel::resetSnowfallOptions,
                     )
                 }
                 entry<Destination.NowPlayingChipEditor>(metadata = BottomSheetSceneStrategy.bottomSheet()) {

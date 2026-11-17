@@ -30,6 +30,7 @@ import eu.hxreborn.pixelinjector.xposed.hook.systemui.nowPlayingChip
 import eu.hxreborn.pixelinjector.xposed.hook.systemui.ongoingNoDismiss
 import eu.hxreborn.pixelinjector.xposed.hook.systemui.pillShot
 import eu.hxreborn.pixelinjector.xposed.hook.systemui.screenshotSound
+import eu.hxreborn.pixelinjector.xposed.hook.systemui.snowfall
 import eu.hxreborn.pixelinjector.xposed.hook.systemui.statusBarDoubleTap
 import eu.hxreborn.pixelinjector.xposed.hook.systemui.warmTiles
 
@@ -46,6 +47,7 @@ internal val tweaks: List<Tweak> =
         downloadChip,
         nowPlayingChip,
         fingerprintIcon,
+        snowfall,
         hideShortcutCircles,
         statusBarDoubleTap,
         forceNewTask,

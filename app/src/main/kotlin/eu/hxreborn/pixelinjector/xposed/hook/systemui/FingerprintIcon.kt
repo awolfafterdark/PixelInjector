@@ -1,9 +1,15 @@
 package eu.hxreborn.pixelinjector.xposed.hook.systemui
 
+import android.content.res.ColorStateList
 import android.content.res.Resources
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Path
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.Rect
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
@@ -37,40 +43,129 @@ import java.util.Collections
 import java.util.WeakHashMap
 import java.util.zip.ZipFile
 import kotlin.concurrent.thread
+import kotlin.math.roundToInt
 
 private const val TWEAK = "FingerprintIcon"
 private const val ICON_VIEW = "com.android.systemui.keyguard.ui.view.DeviceEntryIconView"
 private const val UDFPS_VIEW = "com.android.systemui.biometrics.UdfpsKeyguardView"
 private const val SAMSUNG_LOCK_ICON_VIEW = "com.android.keyguard.SecLockIconView"
 private const val OPAQUE = 255
+private const val PERCENT_FULL = 100f
 private const val MAX_CUSTOM_ICON_SIZE_PX = 1024
 private const val MAX_CUSTOM_SOURCE_SIZE_PX = 32768
+
+private val invertColorFilter =
+    ColorMatrixColorFilter(
+        floatArrayOf(
+            -1f,
+            0f,
+            0f,
+            0f,
+            255f,
+            0f,
+            -1f,
+            0f,
+            0f,
+            255f,
+            0f,
+            0f,
+            -1f,
+            0f,
+            255f,
+            0f,
+            0f,
+            0f,
+            1f,
+            0f,
+        ),
+    )
 
 @Volatile private var current: FingerprintBindings? = null
 
 private val switch = Switch(Prefs.FINGERPRINT_ICON) { current?.updateAll() }
 private val style = Value(Prefs.FINGERPRINT_ICON_STYLE, onLoad = { current?.updateAll() }) { it }
 private val hideCircle = Switch(Prefs.FINGERPRINT_HIDE_CIRCLE) { current?.updateAll() }
+private val iconSize =
+    Value(Prefs.FINGERPRINT_ICON_SIZE, onLoad = { current?.updateAll() }) {
+        it.coerceIn(Prefs.FINGERPRINT_ICON_SIZE_MIN, Prefs.FINGERPRINT_ICON_SIZE_MAX)
+    }
+private val iconOpacity =
+    Value(Prefs.FINGERPRINT_ICON_OPACITY, onLoad = { current?.updateAll() }) {
+        it.coerceIn(Prefs.FINGERPRINT_ICON_OPACITY_MIN, Prefs.FINGERPRINT_ICON_OPACITY_MAX)
+    }
+private val iconRotation =
+    Value(Prefs.FINGERPRINT_ICON_ROTATION, onLoad = { current?.updateAll() }) { it }
+private val iconTint =
+    Value(Prefs.FINGERPRINT_ICON_TINT, onLoad = { current?.updateAll() }) { it }
+private val customScale =
+    Value(Prefs.FINGERPRINT_CUSTOM_SCALE, onLoad = { current?.updateAll() }) { it }
+private val customClipCircle =
+    Switch(Prefs.FINGERPRINT_CUSTOM_CLIP_CIRCLE) { current?.updateAll() }
+private val customInvert =
+    Switch(Prefs.FINGERPRINT_CUSTOM_INVERT) { current?.updateAll() }
 
 internal val fingerprintIcon =
     Tweak(
         key = TWEAK,
         targets = setOf(Target.SYSTEMUI),
-        prefs = listOf(switch, style, hideCircle),
+        prefs =
+            listOf(
+                switch,
+                style,
+                hideCircle,
+                iconSize,
+                iconOpacity,
+                iconRotation,
+                iconTint,
+                customScale,
+                customClipCircle,
+                customInvert,
+            ),
         install = XposedModule::installFingerprintIcon,
         saveState = { current?.carry() },
         onReloadRejected = { current?.resume() },
         restoreState = { saved -> (saved as? Map<*, *>)?.let { current?.restore(it) } },
     )
 
+private data class SwapConfig(
+    val isCustom: Boolean = false,
+    val hidden: Boolean = false,
+    val sizePercent: Int = Prefs.FINGERPRINT_ICON_SIZE_DEFAULT,
+    val opacityPercent: Int = Prefs.FINGERPRINT_ICON_OPACITY_DEFAULT,
+    val rotation: Int = 0,
+    val tintMode: String = Prefs.FINGERPRINT_TINT_NONE,
+    val accentColor: Int = Color.WHITE,
+    val scaleMode: String = Prefs.FINGERPRINT_SCALE_FIT,
+    val clipCircle: Boolean = false,
+    val invertColors: Boolean = false,
+) {
+    val hasStockTransforms: Boolean
+        get() =
+            sizePercent != Prefs.FINGERPRINT_ICON_SIZE_DEFAULT ||
+                opacityPercent != Prefs.FINGERPRINT_ICON_OPACITY_DEFAULT ||
+                rotation != 0 ||
+                tintMode != Prefs.FINGERPRINT_TINT_NONE
+}
+
 private class FingerprintSwap(
     stock: Drawable,
     private val fingerprintStates: List<IntArray>,
+    private val paddingView: View? = null,
 ) : DrawableWrapper(stock) {
+    private val clipPath = Path()
+
+    var hostTint: ColorStateList? = null
+    var hostColorFilter: ColorFilter? = null
+
+    var config: SwapConfig = SwapConfig()
+        set(value) {
+            field = value
+            invalidateSelf()
+        }
+
     var replacement: Drawable? = null
         set(value) {
             field = value
-            value?.bounds = square(bounds)
             invalidateSelf()
         }
 
@@ -79,30 +174,170 @@ private class FingerprintSwap(
             StateSet.stateSetMatches(it, state)
         }
 
-    override fun draw(canvas: Canvas) {
-        if (isFingerprint(state)) replacement?.draw(canvas) else super.draw(canvas)
+    override fun setTintList(tint: ColorStateList?) {
+        hostTint = tint
+        super.setTintList(tint)
+        invalidateSelf()
     }
+
+    override fun setColorFilter(colorFilter: ColorFilter?) {
+        hostColorFilter = colorFilter
+        super.setColorFilter(colorFilter)
+        invalidateSelf()
+    }
+
+    override fun draw(canvas: Canvas) {
+        if (!isFingerprint(state)) {
+            super.draw(canvas)
+            return
+        }
+        if (config.hidden) return
+        val icon = replacement
+        if (icon == null) {
+            drawStockTransformed(canvas)
+            return
+        }
+        if (bounds.isEmpty) return
+        val padLeft = paddingView?.paddingLeft ?: 0
+        val padTop = paddingView?.paddingTop ?: 0
+        val padRight = paddingView?.paddingRight ?: 0
+        val padBottom = paddingView?.paddingBottom ?: 0
+        val left = bounds.left + padLeft
+        val top = bounds.top + padTop
+        val right = bounds.right - padRight
+        val bottom = bounds.bottom - padBottom
+        val availWidth = (right - left).takeIf { it > 0 } ?: bounds.width()
+        val availHeight = (bottom - top).takeIf { it > 0 } ?: bounds.height()
+        val cx = if (right > left) (left + right) / 2f else bounds.exactCenterX()
+        val cy = if (bottom > top) (top + bottom) / 2f else bounds.exactCenterY()
+        val baseSide = minOf(availWidth, availHeight).toFloat()
+        val targetSide = baseSide * (config.sizePercent / PERCENT_FULL)
+        if (targetSide <= 0f) return
+        val half = targetSide / 2f
+        val dw = icon.intrinsicWidth.takeIf { it > 0 }?.toFloat() ?: targetSide
+        val dh = icon.intrinsicHeight.takeIf { it > 0 }?.toFloat() ?: targetSide
+        val mode = if (config.isCustom) config.scaleMode else Prefs.FINGERPRINT_SCALE_FIT
+        val (drawWidth, drawHeight) =
+            when (mode) {
+                Prefs.FINGERPRINT_SCALE_CROP -> {
+                    val scale = maxOf(targetSide / dw, targetSide / dh)
+                    dw * scale to dh * scale
+                }
+
+                Prefs.FINGERPRINT_SCALE_STRETCH -> {
+                    targetSide to targetSide
+                }
+
+                else -> {
+                    val scale = minOf(targetSide / dw, targetSide / dh)
+                    dw * scale to dh * scale
+                }
+            }
+        val halfW = drawWidth / 2f
+        val halfH = drawHeight / 2f
+        icon.setBounds(
+            (cx - halfW).roundToInt(),
+            (cy - halfH).roundToInt(),
+            (cx + halfW).roundToInt(),
+            (cy + halfH).roundToInt(),
+        )
+        icon.alpha =
+            (OPAQUE * (config.opacityPercent / PERCENT_FULL)).roundToInt().coerceIn(0, OPAQUE)
+        icon.colorFilter = resolveColorFilter(forStock = false)
+        val saveCount = canvas.save()
+        try {
+            if (config.isCustom && config.clipCircle) {
+                clipPath.reset()
+                clipPath.addCircle(cx, cy, half, Path.Direction.CW)
+                canvas.clipPath(clipPath)
+            } else if (mode == Prefs.FINGERPRINT_SCALE_CROP) {
+                canvas.clipRect(
+                    (cx - half).roundToInt(),
+                    (cy - half).roundToInt(),
+                    (cx + half).roundToInt(),
+                    (cy + half).roundToInt(),
+                )
+            }
+            if (config.rotation != 0) {
+                canvas.rotate(config.rotation.toFloat(), cx, cy)
+            }
+            icon.draw(canvas)
+        } finally {
+            canvas.restoreToCount(saveCount)
+        }
+    }
+
+    private fun drawStockTransformed(canvas: Canvas) {
+        if (!config.hasStockTransforms || bounds.isEmpty) {
+            super.draw(canvas)
+            return
+        }
+        val stockDrawable = drawable ?: return
+        val cx = bounds.exactCenterX()
+        val cy = bounds.exactCenterY()
+        val scale = config.sizePercent / PERCENT_FULL
+        val previousAlpha = stockDrawable.alpha
+        val overrideFilter = resolveColorFilter(forStock = true)
+        val saveCount = canvas.save()
+        try {
+            if (scale != 1f) {
+                canvas.scale(scale, scale, cx, cy)
+            }
+            if (config.rotation != 0) {
+                canvas.rotate(config.rotation.toFloat(), cx, cy)
+            }
+            stockDrawable.alpha =
+                (OPAQUE * (config.opacityPercent / PERCENT_FULL)).roundToInt().coerceIn(0, OPAQUE)
+            if (overrideFilter != null) {
+                stockDrawable.colorFilter = overrideFilter
+            }
+            super.draw(canvas)
+        } finally {
+            stockDrawable.alpha = previousAlpha
+            if (overrideFilter != null) {
+                stockDrawable.colorFilter = hostColorFilter
+                hostTint?.let(stockDrawable::setTintList)
+            }
+            canvas.restoreToCount(saveCount)
+        }
+    }
+
+    private fun resolveColorFilter(forStock: Boolean): ColorFilter? =
+        when (config.tintMode) {
+            Prefs.FINGERPRINT_TINT_SYSTEM -> {
+                if (forStock) {
+                    null
+                } else {
+                    val tintColor =
+                        hostTint?.getColorForState(state, hostTint?.defaultColor ?: Color.WHITE)
+                    tintColor?.let { PorterDuffColorFilter(it, PorterDuff.Mode.SRC_IN) }
+                        ?: hostColorFilter
+                        ?: PorterDuffColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN)
+                }
+            }
+
+            Prefs.FINGERPRINT_TINT_ACCENT -> {
+                PorterDuffColorFilter(config.accentColor, PorterDuff.Mode.SRC_IN)
+            }
+
+            Prefs.FINGERPRINT_TINT_WHITE -> {
+                PorterDuffColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN)
+            }
+
+            else -> {
+                if (!forStock && config.isCustom && config.invertColors) {
+                    invertColorFilter
+                } else {
+                    null
+                }
+            }
+        }
 
     override fun onStateChange(state: IntArray): Boolean {
         val wasFingerprint = isFingerprint(drawable?.state ?: StateSet.NOTHING)
         val changed = super.onStateChange(state)
         if (wasFingerprint != isFingerprint(state)) drawable?.jumpToCurrentState()
         return changed
-    }
-
-    override fun onBoundsChange(bounds: Rect) {
-        super.onBoundsChange(bounds)
-        replacement?.bounds = square(bounds)
-    }
-
-    private fun square(bounds: Rect): Rect {
-        val half = minOf(bounds.width(), bounds.height()) / 2
-        return Rect(
-            bounds.centerX() - half,
-            bounds.centerY() - half,
-            bounds.centerX() + half,
-            bounds.centerY() + half,
-        )
     }
 }
 
@@ -121,7 +356,8 @@ private sealed interface IconTarget {
     fun apply(
         view: View,
         replacement: () -> Drawable?,
-        hidden: Boolean,
+        config: SwapConfig,
+        active: Boolean,
         circleScale: Float,
     ): Boolean
 }
@@ -159,20 +395,32 @@ private class DeviceEntryTarget(
     override fun apply(
         view: View,
         replacement: () -> Drawable?,
-        hidden: Boolean,
+        config: SwapConfig,
+        active: Boolean,
         circleScale: Float,
     ): Boolean {
         val icon = iconView.get(view) as ImageView
         val bg = bgView.get(view) as ImageView
         val swap = replacement()
         val stock = unwrap(icon.drawable)
-        if (swap != null || hidden) {
+        val needsWrapper = active && (swap != null || config.hidden || config.hasStockTransforms)
+        if (needsWrapper) {
+            icon.cropToPadding = false
+            (view as? ViewGroup)?.apply {
+                clipChildren = false
+                clipToPadding = false
+            }
             val wrapper =
                 icon.drawable as? FingerprintSwap
                     ?: FingerprintSwap(stock, fingerprintStates(view)).also(icon::setImageDrawable)
+            wrapper.hostTint = icon.imageTintList
+            wrapper.hostColorFilter = icon.colorFilter
+            wrapper.config = config
             wrapper.replacement = swap
+            icon.invalidate()
         } else if (icon.drawable !== stock) {
             icon.setImageDrawable(stock)
+            icon.invalidate()
         }
         bg.scaleX = circleScale
         bg.scaleY = circleScale
@@ -194,22 +442,45 @@ private class UdfpsTarget(
     override fun apply(
         view: View,
         replacement: () -> Drawable?,
-        hidden: Boolean,
+        config: SwapConfig,
+        active: Boolean,
         circleScale: Float,
     ): Boolean {
         val bg = bgProtection.get(view) as? ImageView ?: return false
+        if (active) {
+            (view as? ViewGroup)?.apply {
+                clipChildren = false
+                clipToPadding = false
+            }
+        }
         fingerprints.map { it.get(view) as ImageView }.forEach { fingerprint ->
             val swap = replacement()
-            fingerprint.imageAlpha = if (swap != null || hidden) 0 else OPAQUE
-            fingerprint.foreground =
-                swap?.let {
+            val needsSwap = active && (swap != null || config.hidden || config.hasStockTransforms)
+            if (needsSwap) {
+                fingerprint.cropToPadding = false
+                val targetDrawable =
+                    swap
+                        ?: fingerprint.drawable
+                            ?.constantState
+                            ?.newDrawable(view.resources)
+                            ?.mutate()
+                fingerprint.imageAlpha = 0
+                fingerprint.foreground =
                     FingerprintSwap(
                         ColorDrawable(Color.TRANSPARENT),
                         listOf(StateSet.WILD_CARD),
+                        paddingView = fingerprint,
                     ).apply {
-                        this.replacement = it
+                        hostTint = fingerprint.imageTintList
+                        hostColorFilter = fingerprint.colorFilter
+                        this.config = config
+                        this.replacement = targetDrawable
                     }
-                }
+            } else {
+                fingerprint.imageAlpha = OPAQUE
+                fingerprint.foreground = null
+            }
+            fingerprint.invalidate()
         }
         bg.scaleX = circleScale
         bg.scaleY = circleScale
@@ -409,16 +680,39 @@ private class FingerprintBindings(
         return BitmapDrawable(resources, bitmap)
     }
 
+    private fun buildConfig(view: View): SwapConfig {
+        val currentStyle = style.value
+        val accent =
+            try {
+                view.context.getColor(android.R.color.system_accent1_200)
+            } catch (_: Exception) {
+                Color.WHITE
+            }
+        return SwapConfig(
+            isCustom = FingerprintStyles.isCustom(currentStyle),
+            hidden = switch.enabled && currentStyle == FingerprintStyles.NONE,
+            sizePercent = iconSize.value,
+            opacityPercent = iconOpacity.value,
+            rotation = iconRotation.value,
+            tintMode = iconTint.value,
+            accentColor = accent,
+            scaleMode = customScale.value,
+            clipCircle = customClipCircle.enabled,
+            invertColors = customInvert.enabled,
+        )
+    }
+
     @Synchronized
     private fun updateView(view: View) {
         if (retired) return
         try {
-            val style = style.value
+            val currentStyle = style.value
             val swapping =
-                switch.enabled && style != FingerprintStyles.STOCK &&
-                    style != FingerprintStyles.NONE
-            val cached = cachedIcon?.takeIf { it.style == style }
-            if (swapping && cached == null) return loadAsync(view.resources, style)
+                switch.enabled && currentStyle != FingerprintStyles.STOCK &&
+                    currentStyle != FingerprintStyles.NONE
+            val cached = cachedIcon?.takeIf { it.style == currentStyle }
+            if (swapping && cached == null) return loadAsync(view.resources, currentStyle)
+            val config = buildConfig(view)
             val applied =
                 target.apply(
                     view,
@@ -433,13 +727,15 @@ private class FingerprintBindings(
                             null
                         }
                     },
-                    hidden = switch.enabled && style == FingerprintStyles.NONE,
+                    config = config,
+                    active = switch.enabled,
                     circleScale = if (switch.enabled && hideCircle.enabled) 0f else 1f,
                 )
             if (!applied) return
-            val styleLabel = style.ifEmpty { "stock" }
+            val styleLabel = currentStyle.ifEmpty { "stock" }
             Logger.info(
-                "applied tweak=$TWEAK style=$styleLabel hideCircle=${hideCircle.enabled} on=${switch.enabled}",
+                "applied tweak=$TWEAK style=$styleLabel size=${config.sizePercent} " +
+                    "hideCircle=${hideCircle.enabled} on=${switch.enabled}",
             )
         } catch (e: Exception) {
             Logger.error("apply failed tweak=$TWEAK reason=${e.message}", e)
